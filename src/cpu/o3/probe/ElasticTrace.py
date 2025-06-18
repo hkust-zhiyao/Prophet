@@ -46,6 +46,9 @@ class ElasticTrace(ProbeListenerObject):
                                         "instruction fetch tracing")
     dataDepTraceFile = Param.String(desc="Protobuf trace file name for " \
                                     "data dependency tracing")
+
+    memoryAccessTraceFile = Param.String(desc="Protobuf trace file name for " \
+                                    "memory access tracing")
     # The dependency window size param must be equal to or greater than the
     # number of entries in the O3CPU ROB, a typical value is 3 times ROB size
     depWindowSize = Param.Unsigned(desc="Instruction window size used for " \

@@ -126,6 +126,21 @@ CPUProgressEvent::description() const
     return "CPU Progress";
 }
 
+void
+OutPrefetcherPGOInfoEvent::process() 
+{
+    if (cpu->l1cache) {
+        cpu->l1cache->outPrefetcherPGOInfo();
+    }
+    if (cpu->l2cache) {
+        cpu->l2cache->outPrefetcherPGOInfo();
+    }
+    if (cpu->l3cache) {
+        cpu->l3cache->outPrefetcherPGOInfo();
+    }
+}
+
+
 BaseCPU::BaseCPU(const Params &p, bool is_checker)
     : ClockedObject(p),
       instCnt(0),
@@ -153,7 +168,10 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       powerGatingOnIdle(p.power_gating_on_idle),
       enterPwrGatingEvent([this] { enterPwrGating(); }, name()),
       warmupInstCount(p.warmupInstCount),
-      enableDifftest(p.enable_difftest)
+      enableDifftest(p.enable_difftest),
+      l1cache(p.l1_cache),
+      l2cache(p.l2_cache),
+      l3cache(p.l3_cache)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -316,8 +334,12 @@ BaseCPU::init()
     // to happen after threadContexts has been constructed.
     if (params().max_insts_any_thread != 0) {
         const char *cause = "a thread reached the max instruction count";
-        for (ThreadID tid = 0; tid < numThreads; ++tid)
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
             scheduleInstStop(tid, params().max_insts_any_thread, cause);
+            Event *pgo_event(new OutPrefetcherPGOInfoEvent(this));
+            const Tick now(getCurrentInstCount(tid));
+            threadContexts[tid]->scheduleInstCountEvent(pgo_event, now + params().max_insts_any_thread - 1);
+        }
     }
 
     // Set up instruction-count-based termination events for SimPoints
@@ -713,6 +735,7 @@ BaseCPU::scheduleInstStop(ThreadID tid, Counter insts, const char *cause)
 {
     const Tick now(getCurrentInstCount(tid));
     Event *event(new LocalSimLoopExitEvent(cause, 0));
+
 
     threadContexts[tid]->scheduleInstCountEvent(event, now + insts);
 }

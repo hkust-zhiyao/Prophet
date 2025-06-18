@@ -84,7 +84,7 @@ LTAGE::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void* &b)
         if (bi->lpBranchInfo->loopPredUsed) {
             bi->tageBranchInfo->provider = LOOP;
         }
-        DPRINTF(LTage || debugFlagOn, "Predict for %lx: taken?:%d, loopTaken?:%d, "
+        DPRINTF(LTage, "Predict for %lx: taken?:%d, loopTaken?:%d, "
                 "loopValid?:%d, loopUseCounter:%d, tagePred:%d, altPred:%d\n",
                 branch_pc, pred_taken, bi->lpBranchInfo->loopPred,
                 bi->lpBranchInfo->loopPredValid,

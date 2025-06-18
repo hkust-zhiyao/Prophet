@@ -325,6 +325,11 @@ class GenericSatCounter
         return diff;
     }
 
+    uint8_t getValue()
+    {
+        return counter;
+    }
+
   private:
     T initialVal;
     T maxVal;

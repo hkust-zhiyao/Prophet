@@ -30,18 +30,32 @@ Import('*')
 
 SimObject('Prefetcher.py', sim_objects=[
     'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
+    'IPCPPrefetcher',
     'SMSPrefetcher', 'BertiPrefetcher',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
     'DeltaCorrelatingPredictionTables', 'DCPTPrefetcher',
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
-    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher'])
+    'BOPPrefetcher', 'XiangshanPrefetcher',
+    'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'AssistPrefetcher',
+    'TriagePGOPrefetcher', 'TriagePGOHashedSetAssociative',
+    'TriangelPrefetcher', 'TriangelHashedSetAssociative'])
 
 
 DebugFlag('SMSPrefetcher')
 DebugFlag('BertiPrefetcher')
+DebugFlag('IPCPPrefetcher')
+DebugFlag('KeyMetricsTrace')
+DebugFlag('TriagePGO')
+DebugFlag('TriagePGODebug')
+DebugFlag('Triangel')
+DebugFlag('TriangelDebug')
+DebugFlag('TriangelSize')
+DebugFlag('PfObservedTrace')
+DebugFlag('PrefetchTrace')
 
+Source('assist.cc')
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
 Source('multi.cc')
@@ -60,3 +74,9 @@ Source('slim_ampm.cc')
 Source('spatio_temporal_memory_streaming.cc')
 Source('stride.cc')
 Source('tagged.cc')
+Source('ipcp.cc')
+Source('xiangshan.cc')
+Source('triage_pgo.cc')
+Source('triangel.cc')
+Source('MurmurHash2.c')
+Source('bloom.c')

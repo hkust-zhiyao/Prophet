@@ -57,6 +57,7 @@
 #include "debug/Mwait.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
+#include "mem/cache/base.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/full_system.hh"
@@ -106,6 +107,19 @@ class CPUProgressEvent : public Event
 
     virtual const char *description() const;
 };
+
+class OutPrefetcherPGOInfoEvent : public Event
+{
+  protected:
+    BaseCPU *cpu;
+
+  public:
+    OutPrefetcherPGOInfoEvent(BaseCPU *_cpu) {cpu = _cpu;}
+
+    void process();
+};
+
+      
 
 struct DiffAllStates
 {
@@ -728,6 +742,11 @@ class BaseCPU : public ClockedObject
     {
         this->diffAllStates = diffAllStates;
     }
+
+    public:
+      BaseCache * l1cache;
+      BaseCache * l2cache;
+      BaseCache * l3cache;
 };
 
 } // namespace gem5

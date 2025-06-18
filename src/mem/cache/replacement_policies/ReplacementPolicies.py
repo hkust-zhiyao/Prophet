@@ -68,6 +68,11 @@ class LRURP(BaseReplacementPolicy):
     cxx_class = 'gem5::replacement_policy::LRU'
     cxx_header = "mem/cache/replacement_policies/lru_rp.hh"
 
+class PGLRURP(BaseReplacementPolicy):
+    type = 'PGLRURP'
+    cxx_class = 'gem5::replacement_policy::PGLRU'
+    cxx_header = "mem/cache/replacement_policies/pg_rp.hh"
+
 class BIPRP(LRURP):
     type = 'BIPRP'
     cxx_class = 'gem5::replacement_policy::BIP'
@@ -96,6 +101,21 @@ class BRRIPRP(BaseReplacementPolicy):
         "Prioritize evicting blocks that havent had a hit recently")
     btp = Param.Percent(3,
         "Percentage of blocks to be inserted with long RRPV")
+
+class NRFRP(BRRIPRP):
+    type = 'NRFRP'
+    cxx_class = 'gem5::replacement_policy::NRF'
+    cxx_header = "mem/cache/replacement_policies/nrf_rp.hh"
+    btp = 0
+    hit_priority = True
+    num_bits = 2
+    
+class PAWRP(BRRIPRP):
+    type = 'PAWRP'
+    cxx_class = 'gem5::replacement_policy::PAW'
+    cxx_header = "mem/cache/replacement_policies/paw_rp.hh"
+    hit_priority = True
+    num_bits = 2
 
 class RRIPRP(BRRIPRP):
     btp = 100
@@ -149,3 +169,5 @@ class WeightedLRURP(LRURP):
     type = "WeightedLRURP"
     cxx_class = 'gem5::replacement_policy::WeightedLRU'
     cxx_header = "mem/cache/replacement_policies/weighted_lru_rp.hh"
+
+

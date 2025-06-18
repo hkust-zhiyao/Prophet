@@ -74,6 +74,7 @@ Multi::nextPrefetchReadyTime() const
 PacketPtr
 Multi::getPacket()
 {
+    /*
     lastChosenPf = (lastChosenPf + 1) % prefetchers.size();
     uint8_t pf_turn = lastChosenPf;
 
@@ -86,6 +87,23 @@ Multi::getPacket()
             return pkt;
         }
         pf_turn = (pf_turn + 1) % prefetchers.size();
+    }*/
+    Tick min_ready = MaxTick;
+    int target_pf = -1;
+
+    for (int i = 0 ;  i < prefetchers.size(); i++) {
+        Tick pf_tick = prefetchers[i]->nextPrefetchReadyTime();
+        if (pf_tick < min_ready && pf_tick <= curTick()) {
+            min_ready = pf_tick;
+            target_pf = i;
+        }
+        if (target_pf != -1) {
+            PacketPtr pkt = prefetchers[target_pf]->getPacket();
+            panic_if(!pkt, "Prefetcher is ready but didn't return a packet.");
+            prefetchStats.pfIssued++;
+            issuedPrefetches++;
+            return pkt;
+        }
     }
 
     return nullptr;

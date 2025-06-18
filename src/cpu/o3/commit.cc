@@ -70,6 +70,7 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "mem/cache/prefetch/base.hh"
 
 namespace gem5
 {
@@ -1029,6 +1030,19 @@ Commit::commitInsts()
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
+
+                if(cpu->l1cache->prefetcher!=nullptr)
+                {
+                    cpu->l1cache->prefetcher->notifyCommit();
+                }
+                if(cpu->l2cache->prefetcher!=nullptr)
+                {
+                    cpu->l2cache->prefetcher->notifyCommit();
+                }
+                if(cpu->l3cache->prefetcher!=nullptr)
+                {
+                    cpu->l3cache->prefetcher->notifyCommit();
+                }
 
                 // hardware transactional memory
 

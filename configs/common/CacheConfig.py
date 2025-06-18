@@ -114,7 +114,26 @@ def config_cache(options, system):
     if options.l2cache and options.elastic_trace_en:
         fatal("When elastic trace is enabled, do not configure L2 caches.")
 
+# /home/mliet/crono_ckpt/bc_10000_1000_10439_0.348776_.gz
+# out: /home/mliet/gem5/script/crono_TriangelPrefetcher/bc_10000_1000/bc_10000_1000_10439_0.348776
     if options.l2cache:
+        cpt_path = options.generic_rv_cpt
+        if cpt_path.count('crono') > 0:
+            print('using crono')
+            cpt = cpt_path.split('/')[-1]
+            ckpt = "_".join(cpt.split('_')[:-1])
+            benchmark = "_".join(ckpt.split('_')[:-2])
+            print(f"{benchmark}/{ckpt}")
+        else:
+            print('using spec')
+            ckpt = cpt_path.split('/')[-3]
+            segments = ckpt.split('_')
+            if len(segments) > 3:
+                benchmark = f"{segments[0]}_{segments[1]}"
+            else:
+                benchmark = f"{segments[0]}"
+            print(f"{benchmark}/{ckpt}")
+
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
@@ -123,19 +142,48 @@ def config_cache(options, system):
 
         system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain, width=256)
         system.l2.cpu_side = system.tol2bus.mem_side_ports
+        system.l2.pgo_benchmark = f"{benchmark}/{ckpt}"
 
         if options.l3cache:
           system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
                                      **_get_cache_opts('l3', options))
-
-          # l2 -> tol3bus -> l3
+          system.l3.pgo_benchmark = f"{benchmark}/{ckpt}"
           system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
-          system.l3.cpu_side = system.tol3bus.mem_side_ports
-          system.l2.mem_side = system.tol3bus.cpu_side_ports
-          # l3 -> membus
-          system.l3.mem_side = system.membus.cpu_side_ports
+          
+          if options.trace_monitor:
+            # l2 -> tol3bus -> monitor -> l3
+            system.monitor_l2_l3 = CommMonitor()
+            system.monitor_l2_l3.trace = MemTraceProbe(trace_file="l2_l3_trace.tar.gz")
+
+            system.l2.mem_side = system.tol3bus.cpu_side_ports
+            system.monitor_l2_l3.cpu_side_port = system.tol3bus.mem_side_ports
+            system.monitor_l2_l3.mem_side_port = system.l3.cpu_side
+            # l3 -> membus
+            system.l3.mem_side = system.membus.cpu_side_ports
+
+          else:
+            # l2 -> tol3bus -> l3
+            system.l3.cpu_side = system.tol3bus.mem_side_ports
+            system.l2.mem_side = system.tol3bus.cpu_side_ports
+            # l3 -> membus
+            system.l3.mem_side = system.membus.cpu_side_ports
         else:
           system.l2.mem_side = system.membus.cpu_side_ports
+        
+        if options.l3cache and (options.l2_hwp_type == 'TriangelPrefetcher' or options.l2_hwp_type == 'TriagePGOPrefetcher'):
+            system.l2.prefetcher.cachetags = system.l3.tags
+        
+        if options.l3_hwp_type == 'AssistPrefetcher':
+            system.l3.prefetcher.output_file = m5.options.outdir
+
+        if options.l2_hwp_type == 'TriagePGOPrefetcher':
+            system.l2.prefetcher.output_file = m5.options.outdir
+            system.l2.prefetcher.pgo_benchmark = f"{benchmark}/{ckpt}"
+            system.l2.prefetcher.meta_entries = options.tp_meta_size
+        
+        if options.l2_hwp_type == 'TriangelPrefetcher':
+            system.l2.prefetcher.pgo_benchmark = f"{benchmark}"
+        
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -146,6 +194,22 @@ def config_cache(options, system):
             dcache = dcache_class(**_get_cache_opts('l1d', options))
             if dcache.prefetcher != NULL:
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
+                if options.l1d_hwp_type == 'IPCPPrefetcher' or options.l1d_hwp_type == 'StridePrefetcher':
+                    if options.l1d_hwp_type == 'IPCPPrefetcher':
+                        dcache.prefetcher.output_file = m5.options.outdir
+                    cpt_path = options.generic_rv_cpt
+                    if cpt_path.count('crono') > 0:
+                        print(f"{benchmark}/{ckpt}")
+                        dcache.prefetcher.pgo_benchmark = f"{benchmark}/{ckpt}"
+                    else:
+                        ckpt = options.generic_rv_cpt.split('/')[-3]
+                        segments = ckpt.split('_')
+                        if len(segments) > 3:
+                            benchmark = f"{segments[0]}_{segments[1]}"
+                        else:
+                            benchmark = f"{segments[0]}"
+                        print(f"{benchmark}/{ckpt}")
+                        dcache.prefetcher.pgo_benchmark = f"{benchmark}/{ckpt}"
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -211,6 +275,10 @@ def config_cache(options, system):
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
         else:
             system.cpu[i].connectBus(system.membus)
+    
+        if options.l3cache and options.l2cache and options.caches:
+            system.cpu[i].bindCache(dcache, system.l2, system.l3)
+
 
     return system
 

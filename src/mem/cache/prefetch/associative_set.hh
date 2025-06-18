@@ -30,6 +30,7 @@
 #define __CACHE_PREFETCH_ASSOCIATIVE_SET_HH__
 
 #include "mem/cache/replacement_policies/base.hh"
+#include "mem/cache/replacement_policies/weighted_lru_rp.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 
@@ -47,14 +48,17 @@ class AssociativeSet
     static_assert(std::is_base_of_v<TaggedEntry, Entry>,
                   "Entry must derive from TaggedEntry");
 
+  public:
     /** Associativity of the container */
     const int associativity;
+    int allocAssoc;
     /**
      * Total number of entries, entries are organized in sets of the provided
      * associativity. The number of associative sets is obtained by dividing
      * numEntries by associativity.
      */
-    const int numEntries;
+    const uint32_t numEntries;
+
     /** Pointer to the indexing policy */
     BaseIndexingPolicy* const indexingPolicy;
     /** Pointer to the replacement policy */
@@ -84,6 +88,8 @@ class AssociativeSet
      */
     Entry* findEntry(Addr addr, bool is_secure) const;
 
+    Entry* findEntryTriangel(Addr addr, bool is_secure) const;
+
     /**
      * Do an access to the entry, this is required to
      * update the replacement information data.
@@ -91,12 +97,18 @@ class AssociativeSet
      */
     void accessEntry(Entry *entry);
 
+    void weightedAccessEntry(Entry *entry, int weight, bool fill);
+
     /**
      * Find a victim to be replaced
      * @param addr key to select the possible victim
      * @result entry to be victimized
      */
     Entry* findVictim(Addr addr);
+
+    Entry* findVictimHint(Addr addr, bool & hint);
+    
+    Entry* findVictimTriangel(Addr addr);
 
     /**
      * Find the set of entries that could be replaced given
@@ -106,6 +118,8 @@ class AssociativeSet
      */
     std::vector<Entry *> getPossibleEntries(const Addr addr) const;
 
+    std::vector<Entry *> getPossibleEntriesTriangel(const Addr addr) const;
+
     /**
      * Indicate that an entry has just been inserted
      * @param addr key of the container
@@ -113,6 +127,24 @@ class AssociativeSet
      * @param entry pointer to the container entry to be inserted
      */
     void insertEntry(Addr addr, bool is_secure, Entry* entry);
+
+    void insertEntry(Addr addr, bool is_secure, Entry* entry, int degree);
+
+    void setPGODegree(Entry* entry, int degree);
+
+    void setWayAllocationMax(int ways)
+    {
+        allocAssoc = ways;
+    }
+
+    /**
+     * Get the way allocation mask limit.
+     * @return The maximum number of ways available for replacement.
+     */
+    int getWayAllocationMax() const
+    {
+        return allocAssoc;
+    }
 
     /**
      * Invalidate an entry and its respective replacement data.

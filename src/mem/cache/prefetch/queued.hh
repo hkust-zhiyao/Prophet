@@ -104,6 +104,11 @@ class Queued : public Base
             return !(*this > that);
         }
 
+        Addr getPfVaddr() const
+        {
+            return pkt->getPfVaddr();
+        }
+
         /**
          * Create the associated memory packet
          * @param paddr physical address of this packet
@@ -189,7 +194,12 @@ class Queued : public Base
         statistics::Scalar pfRemovedFull;
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
+        statistics::Scalar crossLevelPrefetch;
     } statsQueued;
+
+    int recv_trains;
+
+    bool crossPages;
   public:
     using AddrPriority = std::pair<Addr, int32_t>;
 
@@ -198,10 +208,23 @@ class Queued : public Base
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
+    void notifyCross(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses) override;
+    
+    void notifyPrecomputation(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses) override;
+ 
+     virtual void calculatePrefetch(const PrefetchInfo &pfi,
+                                   std::vector<AddrPriority> &addresses) {};
+
+    virtual void calculatePrefetch(const PacketPtr &pkt,
+                                    const PrefetchInfo &pfi,
+                                    std::vector<AddrPriority> &addresses){
+        calculatePrefetch(pfi,addresses);
+    };
+
     void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, int32_t priority);
 
-    virtual void calculatePrefetch(const PrefetchInfo &pfi,
-                                   std::vector<AddrPriority> &addresses) = 0;
     PacketPtr getPacket() override;
 
     Tick nextPrefetchReadyTime() const override

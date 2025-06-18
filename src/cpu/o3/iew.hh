@@ -265,7 +265,7 @@ class IEW
      * LSQ to execute the instructions. Also handles any redirects that occur
      * due to the executed instructions.
      */
-    void executeInsts();
+    int executeInsts();
 
     /** Writebacks instructions. In our model, the instruction's execute()
      * function atomically reads registers, executes, and writes registers.
@@ -488,6 +488,11 @@ class IEW
         statistics::Formula wbRate;
         /** Average number of woken instructions per writeback. */
         statistics::Formula wbFanout;
+        /** Number of cycles with no uops executed and at least 1 inflight load that is not completed yet. */
+        statistics::Scalar memStallAnyLoad;
+        statistics::Scalar memStallL1Miss;
+        statistics::Scalar memStallL2Miss;
+        statistics::Scalar memStallL3Miss;
     } iewStats;
 };
 

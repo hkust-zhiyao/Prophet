@@ -121,6 +121,9 @@ class BaseCPU(ClockedObject):
     workload = VectorParam.Process([], "processes to run")
 
     mmu = Param.BaseMMU(NULL, "CPU memory management unit")
+    l1_cache = Param.BaseCache(NULL, "For Top-down analysis")
+    l2_cache = Param.BaseCache(NULL, "For Top-down analysis")
+    l3_cache = Param.BaseCache(NULL, "For Top-down analysis")
     interrupts = VectorParam.BaseInterrupts([], "Interrupt Controller")
     isa = VectorParam.BaseISA([], "ISA instance")
     decoder = VectorParam.InstDecoder([], "Decoder instance")
@@ -281,6 +284,11 @@ class BaseCPU(ClockedObject):
         # for the ISA class, to generate the PMU entry in the DTB.
         for child_node in self.recurseDeviceTree(state):
             yield child_node
+    
+    def bindCache(self, l1, l2, l3):
+        self.l1_cache = l1
+        self.l2_cache = l2
+        self.l3_cache = l3
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -301,3 +309,5 @@ class BaseCPU(ClockedObject):
             self._uncached_interrupt_request_ports = \
                     self._uncached_interrupt_request_ports + [
                     "interrupts[0].int_requestor"]
+
+    

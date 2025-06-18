@@ -49,3 +49,9 @@ Source('mem_footprint.cc')
 # Packet tracing requires protobuf support
 SimObject('MemTraceProbe.py', sim_objects=['MemTraceProbe'], tags='protobuf')
 Source('mem_trace.cc', tags='protobuf')
+
+
+SimObject('AccessTrace.py', sim_objects=['AccessTrace'])
+Source('access_trace.cc')
+DebugFlag('AccessTrace')
+DebugFlag('PrefetchIssueTrace')

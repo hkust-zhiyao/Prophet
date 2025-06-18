@@ -95,10 +95,10 @@ class BaseTags : public ClockedObject
     const unsigned warmupBound;
     /** Marked true when the cache is warmed up. */
     bool warmedUp;
-
+public:
     /** the number of blocks in the cache */
     const unsigned numBlocks;
-
+protected:
     /** The data blocks, 1 per cache block. */
     std::unique_ptr<uint8_t[]> dataBlks;
 
@@ -236,6 +236,11 @@ class BaseTags : public ClockedObject
         panic("This tag class does not implement way allocation limit!\n");
     }
 
+    virtual void clearSetWay(int set, int way)
+    {
+         panic("This tag class does not implement way allocation limit!\n");   
+    }
+
     /**
      * Get the way allocation mask limit.
      * @return The maximum number of ways available for replacement.
@@ -261,6 +266,16 @@ class BaseTags : public ClockedObject
         stats.sampledRefs++;
 
         blk->invalidate();
+    }
+    
+    std::vector<CacheBlk*> badBlocks;
+    
+    CacheBlk* getBadBlock() {
+      if(badBlocks.empty()) return NULL;
+      
+      CacheBlk* blk = badBlocks.back();
+      badBlocks.pop_back();
+      return blk;
     }
 
     /**
@@ -310,6 +325,11 @@ class BaseTags : public ClockedObject
      */
     virtual void insertBlock(const PacketPtr pkt, CacheBlk *blk);
 
+    virtual void insertBlock(const PacketPtr pkt, CacheBlk *blk, int degree) {
+        insertBlock(pkt, blk);
+    }
+
+
     /**
      * Move a block's metadata to another location decided by the replacement
      * policy. It behaves as a swap, however, since the destination block
@@ -348,6 +368,10 @@ class BaseTags : public ClockedObject
      * @param visitor Visitor to call on each block.
      */
     virtual bool anyBlk(std::function<bool(CacheBlk &)> visitor) = 0;
+
+    virtual void handlePrefetchInsertion(CacheBlk *blk, PacketPtr pkt) {}
+
+    virtual int getPGODegree(CacheBlk *blk) { return 0; }
 
   private:
     /**

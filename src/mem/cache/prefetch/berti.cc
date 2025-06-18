@@ -7,6 +7,8 @@
 #include "debug/BertiPrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
+#include <cassert>
+
 namespace gem5
 {
 namespace prefetch
@@ -120,26 +122,46 @@ BertiPrefetcher::updateTableOfDeltas(
     printDeltaTableEntry(*entry);
 }
 
-void
-BertiPrefetcher::calculatePrefetch(
-    const PrefetchInfo &pfi,
-    std::vector<AddrPriority> &addressed)
+
+
+void BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addressed)
 {
     DPRINTF(BertiPrefetcher,
             "Train prefetcher, ip: [%lx] "
             "lineAddr: [%d] miss: %d last lat: [%d]\n",
             pfi.getPC(), blockIndex(pfi.getAddr()),
             pfi.isCacheMiss(), lastFillLatency);
-
     if (pfi.isCacheMiss()) {
         statsBerti.num_train_miss++;
     } else {
         statsBerti.num_train_hit++;
+    }
+    cleanPrefetchLatency();
+
+    // 2. Learning timely deltas
+
+    //A new entry is inserted in the history table either (1) on-demand misses or (2) on hits for prefetched cache lines.
+    if(pfi.isCacheMiss()||(!pfi.isCacheMiss()&&hasBeenPrefetched(pfi.getAddr(), pfi.isSecure())))
+    {
+        updateHistoryTable(pfi);
+    }
+
+    // The search for timely deltas is performed either (1) on a fill due to a demand access or (2) on a hit due to a prefetched cache line
+    if(!pfi.isCacheMiss()&&hasBeenPrefetched(pfi.getAddr(), pfi.isSecure()))
+    {
         HistoryTableEntry *hist_entry = historyTable.findEntry(
             pfi.getPC(), pfi.isSecure());
         if (hist_entry) {
-           std::vector<int64_t> deltas;
-            searchTimelyDeltas(*hist_entry, lastFillLatency,
+
+            bool found = false;
+            std::list<prefetch_fill_latency>::iterator it;
+            for (it = prefetch_latency_container.begin(); it != prefetch_latency_container.end() && !found; it++) {
+                found = (it->addr == blockAddress(pfi.getAddr()));
+            }
+            assert(found);
+            Cycles PrefetchFillLatency = it->latency;
+            std::vector<int64_t> deltas;
+            searchTimelyDeltas(*hist_entry, PrefetchFillLatency,
                                curCycle(),
                                blockIndex(pfi.getAddr()), deltas);
             updateTableOfDeltas(pfi.getPC(), pfi.isSecure(), deltas);
@@ -147,10 +169,9 @@ BertiPrefetcher::calculatePrefetch(
     }
     statsBerti.train_pc.sample(pfi.getPC());
 
-    /** 1.train: update history table */
-    updateHistoryTable(pfi);
 
-    /** 2.prefetch: search table of deltas, issue prefetch request */
+    // Issuing prefetch requests
+
     TableOfDeltasEntry *entry =
         tableOfDeltas.findEntry(pfi.getPC(), pfi.isSecure());
     if (entry) {
@@ -179,9 +200,8 @@ BertiPrefetcher::calculatePrefetch(
             }
         }
     }
-
-    return;
 }
+
 
 void BertiPrefetcher::searchTimelyDeltas(
     const HistoryTableEntry &entry,
@@ -206,9 +226,15 @@ void BertiPrefetcher::searchTimelyDeltas(
     }
 }
 
-void
-BertiPrefetcher::notifyFill(const PacketPtr &pkt)
+
+void BertiPrefetcher::notifyFill4Miss(const PacketPtr &pkt)
 {
+    notifyFill(pkt);
+}
+
+void BertiPrefetcher::notifyFill(const PacketPtr &pkt)
+{
+    DPRINTF(BertiPrefetcher, "Receive: %s\n", pkt->print());
     if (pkt->req->isInstFetch() ||
         !pkt->req->hasVaddr() || !pkt->req->hasPC()) {
         DPRINTF(BertiPrefetcher, "Skip packet: %s\n", pkt->print());
@@ -217,31 +243,32 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     DPRINTF(BertiPrefetcher,
             "Cache Fill: %s isPF: %d\n",
             pkt->print(), pkt->req->isPrefetch());
-
     if (pkt->req->isPrefetch()) {
         statsBerti.num_fill_prefetch++;
-        return;
     } else {
         statsBerti.num_fill_miss++;
     }
+    cleanPrefetchLatency();
 
+    // 1. Measuring fetch latency
+    
     Cycles latency = ticksToCycles(curTick() - pkt->req->time());
-    // update lastFillLatency for prefetch on hit
     lastFillLatency = latency;
+    if (pkt->req->isPrefetch()) {
+        prefetch_fill_latency new_latency;
+        new_latency.addr = blockAddress(pkt->req->getVaddr());
+        new_latency.is_secure = pkt->req->isSecure();
+        new_latency.latency = lastFillLatency;
+        prefetch_latency_container.push_back(new_latency);
+    }
 
     statsBerti.fill_pc.sample(pkt->req->getPC());
-
-    HistoryTableEntry *entry =
-        historyTable.findEntry(pkt->req->getPC(), pkt->req->isSecure());
-    if (!entry)
-        return;
 
     /** Search history table, find deltas. */
     Cycles demand_cycle = ticksToCycles(pkt->req->time());
     Cycles wrappedLatency;
-    if (latency > 500){
-        wrappedLatency = Cycles(500);
-    } else if (latency % 10 == 0) {
+
+    if (latency % 10 == 0) {
         wrappedLatency = Cycles((latency / 10) * 10);
     } else {
         wrappedLatency = Cycles( ((latency / 10) + 1) * 10 );
@@ -251,15 +278,26 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     DPRINTF(BertiPrefetcher, "Updating table of deltas, latency [%d]\n",
             latency);
 
-    std::vector<int64_t> timely_deltas = std::vector<int64_t>();
-    searchTimelyDeltas(*entry, latency, demand_cycle,
+    
+
+    // 2. Learning timely deltas
+
+    // The search for timely deltas is performed either (1) on a fill due to a demand access or (2) on a hit due to a prefetched cache line
+    if (!pkt->req->isPrefetch()) {
+        HistoryTableEntry *entry =
+                 historyTable.findEntry(pkt->req->getPC(), pkt->req->isSecure());
+        if (!entry)
+            return;
+        std::vector<int64_t> timely_deltas = std::vector<int64_t>();
+        searchTimelyDeltas(*entry, lastFillLatency, demand_cycle,
                        blockIndex(pkt->req->getVaddr()),
                        timely_deltas);
-
-    /** Update table of deltas. */
-    updateTableOfDeltas(pkt->req->getPC(), pkt->req->isSecure(),
+        updateTableOfDeltas(pkt->req->getPC(), pkt->req->isSecure(),
                         timely_deltas);
+    }
 }
+
+
 
 }
 }

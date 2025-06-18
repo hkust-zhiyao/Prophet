@@ -63,7 +63,8 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
   : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
     requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
-    paddress(pkt->req->getPaddr()), cacheMiss(miss)
+    paddress(pkt->req->getPaddr()), cacheMiss(miss), iside(pkt->req->isInstFetch()),
+    prefetchHit(pkt->isPrefetchHit())
 {
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
@@ -73,22 +74,34 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
     }
+    if (pkt->isPrefetchHit()) {
+        pkt->clearPrefetchHit();
+    }
 }
 
-Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
+Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr, Addr offset)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr)
+    data(nullptr), prefetchHit(pfi.prefetchHit)
 {
 }
 
 void
 Base::PrefetchListener::notify(const PacketPtr &pkt)
 {
-    if (isFill) {
+    if (isFill && !miss && !hasData) {
         parent.notifyFill(pkt);
-    } else {
+	    //std::cout<<"notifyFill"<<std::endl;
+    }
+    else if (isFill && miss && !hasData)
+    {
+	    parent.notifyFill4Miss(pkt);
+    }
+    else if (isFill && hasData) {
+        parent.notifyFillPrefetchData(pkt);
+    }
+    else {
         parent.probeNotify(pkt, miss);
     }
 }
@@ -103,7 +116,8 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), tlb(nullptr)
+      usefulPrefetches(0), usefulPrefetchesUntimely(0), tlb(nullptr),
+      pfTimelyEpo(0), pfUntimelyEpo(0), pfIssuedEpo(0), demandMshrMissesEpo(0)
 {
 }
 
@@ -142,17 +156,31 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     ADD_STAT(pfHitInWB, statistics::units::Count::get(),
         "number of prefetches hit in the Write Buffer"),
     ADD_STAT(pfLate, statistics::units::Count::get(),
-        "number of late prefetches (hitting in cache, MSHR or WB)")
+        "number of late prefetches (hitting in cache, MSHR or WB)"),
+    ADD_STAT(pfTimely, statistics::units::Count::get(),
+        "number of timely prefetches (hitting in cache)."),
+    ADD_STAT(pfTimelyNoPF, statistics::units::Count::get(),
+        "number of timely prefetches (hitting in cache)."),
+    ADD_STAT(pfUntimely, statistics::units::Count::get(),
+        "number of untimely prefetches (demand accesses hitting "
+        "in MSHR)."),
+    ADD_STAT(pfUntimelyNoPF, statistics::units::Count::get(),
+        "number of timely prefetches (hitting in cache)."),
+    ADD_STAT(timeliness, statistics::units::Count::get(),
+        "timeliness of this prefetcher")
 {
     using namespace statistics;
 
     pfUnused.flags(nozero);
 
     accuracy.flags(total);
-    accuracy = pfUseful / pfIssued;
+    accuracy = (pfTimely + pfUntimely) / pfIssued;
 
     coverage.flags(total);
-    coverage = pfUseful / (pfUseful + demandMshrMisses);
+    coverage = (pfTimely + pfUntimely) / (pfTimely + pfUntimely + demandMshrMisses);
+
+    timeliness.flags(total);
+    timeliness = pfTimely / (pfTimely + pfUntimely);
 
     pfLate = pfHitInCache + pfHitInMSHR + pfHitInWB;
 }
@@ -288,6 +316,10 @@ Base::regProbeListeners()
                                                  false));
         listeners.push_back(new PrefetchListener(*this, pm, "Hit", false,
                                                  false));
+        listeners.push_back(new PrefetchListener(*this, pm, "Fill4Miss", true,
+                                                 true));
+        listeners.push_back(new PrefetchListener(*this, pm, "FillPrefetchData", true,
+                                                    false, true));
     }
 }
 

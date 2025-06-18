@@ -60,6 +60,7 @@
 #include "proto/protoio.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
+#include "cpu/thread_context.hh"
 
 namespace gem5
 {
@@ -178,6 +179,8 @@ class ElasticTrace : public ProbeListenerObject
      * @param head_inst pointer to dynamic instruction to be committed
      */
     void addCommittedInst(const DynInstConstPtr& head_inst);
+
+    void addMemoryAccess(const std::pair<DynInstConstPtr, PacketPtr>& p);
 
     /** Event to trigger registering this listener for all probe points. */
     EventFunctionWrapper regEtraceListenersEvent;
@@ -353,6 +356,9 @@ class ElasticTrace : public ProbeListenerObject
 
     /** Protobuf output stream for instruction fetch trace. */
     ProtoOutputStream* instTraceStream;
+
+    /** Protobuf output stream for instruction fetch trace. */
+    ProtoOutputStream* memoryTraceStream;
 
     /** Number of instructions after which to enable tracing. */
     const InstSeqNum startTraceInst;

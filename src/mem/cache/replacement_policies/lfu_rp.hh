@@ -104,6 +104,8 @@ class LFU : public Base
     ReplaceableEntry* getVictim(const ReplacementCandidates& candidates) const
                                                                      override;
 
+    void prefetchInsertion(const std::shared_ptr<ReplacementData>&
+        replacement_data) const {}
     /**
      * Instantiate a replacement data entry.
      *

@@ -76,14 +76,15 @@ class Base : public ClockedObject
       public:
         PrefetchListener(Base &_parent, ProbeManager *pm,
                          const std::string &name, bool _isFill = false,
-                         bool _miss = false)
+                         bool _miss = false, bool _isFillData = false)
             : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss) {}
+              parent(_parent), isFill(_isFill), miss(_miss), hasData(_isFillData) {}
         void notify(const PacketPtr &pkt) override;
       protected:
         Base &parent;
         const bool isFill;
         const bool miss;
+        const bool hasData;
     };
 
     std::vector<PrefetchListener *> listeners;
@@ -98,6 +99,8 @@ class Base : public ClockedObject
     {
         /** The address used to train and generate prefetches */
         Addr address;
+
+        Addr offset;
         /** The program counter that generated this address. */
         Addr pc;
         /** The requestor ID that generated this address. */
@@ -116,8 +119,16 @@ class Base : public ClockedObject
         bool cacheMiss;
         /** Pointer to the associated request data */
         uint8_t *data;
+        /** Whether this event comes from icache */
+        bool iside;
+
+        bool prefetchHit;
+
 
       public:
+        bool isPrefetchHit() const {
+            return prefetchHit;
+        }
         /**
          * Obtains the address value of this Prefetcher address.
          * @return the addres value.
@@ -125,6 +136,11 @@ class Base : public ClockedObject
         Addr getAddr() const
         {
             return address;
+        }
+
+        Addr getOffset() const
+        {
+            return offset;
         }
 
         /**
@@ -155,6 +171,12 @@ class Base : public ClockedObject
             return validPC;
         }
 
+        void setPC(Addr _pc)
+        {
+            validPC = true;
+            pc = _pc;
+        }
+
         /**
          * Gets the requestor ID that generated this address
          * @return the requestor ID that generated this address
@@ -171,6 +193,11 @@ class Base : public ClockedObject
         unsigned int getSize() const
         {
             return size;
+        }
+
+        bool isInstFetch() const
+        {
+            return iside;
         }
 
         /**
@@ -251,7 +278,7 @@ class Base : public ClockedObject
          * @param pfi PrefetchInfo used to generate this new object
          * @param addr the address value of the new object
          */
-        PrefetchInfo(PrefetchInfo const &pfi, Addr addr);
+        PrefetchInfo(PrefetchInfo const &pfi, Addr addr, Addr offset = 0);
 
         ~PrefetchInfo()
         {
@@ -357,6 +384,24 @@ class Base : public ClockedObject
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;
+        
+        /** The number of timely HW-prefetches
+         * (hit in cache). */
+        statistics::Scalar pfTimely;
+
+        /** The number of timely HW-prefetches
+         * (hit in cache). */
+        statistics::Scalar pfTimelyNoPF;
+
+        /** The number of untimely HW-prefetches
+         * (demand accesses hit in MSHR). */
+        statistics::Scalar pfUntimely;
+
+        /** The number of untimely HW-prefetches
+         * (demand accesses hit in MSHR). */
+        statistics::Scalar pfUntimelyNoPF;
+
+        statistics::Formula timeliness ;
     } prefetchStats;
 
     /** Total prefetches issued */
@@ -364,10 +409,22 @@ class Base : public ClockedObject
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
+    /** Total prefetches that has been untimely useful */
+    uint64_t usefulPrefetchesUntimely;
+
     /** Registered tlb for address translations */
     BaseTLB * tlb;
 
+    uint64_t pfTimelyEpo;
+
+    uint64_t pfUntimelyEpo;
+
+    uint64_t pfIssuedEpo;
+
+    uint64_t demandMshrMissesEpo;
+
   public:
+    using AddrPriority = std::pair<Addr, int32_t>;
     Base(const BasePrefetcherParams &p);
     virtual ~Base() = default;
 
@@ -379,9 +436,28 @@ class Base : public ClockedObject
      */
     virtual void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) = 0;
 
+    virtual void notifyCross(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses) {};
+    
+    virtual void notifyPrecomputation(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses) {};
+
     /** Notify prefetcher of cache fill */
     virtual void notifyFill(const PacketPtr &pkt)
     {}
+
+    virtual void notifyFill4Miss(const PacketPtr &pkt)
+    {}
+
+    virtual void notifyFillPrefetchData(const PacketPtr &pkt)
+    {}
+
+    virtual void notifyCommit()
+    {}
+
+    virtual void outPrefetcherPGOInfo() {
+            
+    }
 
     virtual PacketPtr getPacket() = 0;
 
@@ -397,6 +473,7 @@ class Base : public ClockedObject
     incrDemandMhsrMisses()
     {
         prefetchStats.demandMshrMisses++;
+        demandMshrMissesEpo++;
     }
 
     void
@@ -415,6 +492,40 @@ class Base : public ClockedObject
     pfHitInWB()
     {
         prefetchStats.pfHitInWB++;
+    }
+
+    virtual void
+    pfTimely(PacketPtr pkt)
+    {
+        prefetchStats.pfTimely++;
+        pfTimelyEpo++;
+    }
+
+    void
+    pfTimelyNoPF()
+    {
+        prefetchStats.pfTimelyNoPF++;
+    }
+
+    void
+    pfUntimelyNoPF()
+    {
+        prefetchStats.pfUntimelyNoPF++;
+    }
+
+    void
+    pfIssued()
+    {
+        prefetchStats.pfIssued++;
+        pfIssuedEpo++;
+    }
+
+    virtual void
+    pfUntimely(PacketPtr pkt)
+    {
+        prefetchStats.pfUntimely++;
+	    usefulPrefetchesUntimely++;
+        pfUntimelyEpo++;
     }
 
     /**

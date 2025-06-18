@@ -108,6 +108,14 @@ class CacheBlk : public TaggedEntry
      */
     Tick whenReady = 0;
 
+    struct DeadTrack {
+        bool trip;
+        bool prefetched;
+        int aboveRefCount;
+    };
+
+    DeadTrack deadtrack;
+
   protected:
     /**
      * Represents that the indicated thread context has a "lock" on
@@ -205,6 +213,8 @@ class CacheBlk : public TaggedEntry
         TaggedEntry::invalidate();
 
         clearPrefetched();
+        clearTrip();
+        clearDeadTrack();
         clearPendingInvalidate();
         clearCoherenceBits(AllBits);
 
@@ -261,6 +271,12 @@ class CacheBlk : public TaggedEntry
     /** Marks this blocks as a recently prefetched block. */
     void setPrefetched() { _prefetched = true; }
 
+    bool wasTriped() const { return _trip; }
+
+    void clearTrip() { _trip = false; }
+
+    void setTrip() { _trip = true; }
+
     bool needInvalidate() const { return _needInvalidate; }
 
     void setPendingInvalidate() { _needInvalidate = true; }
@@ -302,6 +318,8 @@ class CacheBlk : public TaggedEntry
 
     /** Get the number of references to this block since insertion. */
     void increaseRefCount() { _refCount++; }
+
+    void decreaseRefCount() { _refCount--; }
 
     /**
      * Get the block's age, that is, the number of ticks since its insertion.
@@ -461,6 +479,12 @@ class CacheBlk : public TaggedEntry
         }
     }
 
+    void clearDeadTrack() {
+        deadtrack.trip = false;
+        deadtrack.prefetched = false;
+        deadtrack.aboveRefCount = 0;
+    }
+
   protected:
     /** The current coherence status of this block. @sa CoherenceBits */
     unsigned coherence;
@@ -500,6 +524,8 @@ class CacheBlk : public TaggedEntry
 
     /** Whether this block is an unaccessed hardware prefetch. */
     bool _prefetched = 0;
+
+    bool _trip = 0;
 
     /** Whether there is a pending invalidate on this block. */
     bool _needInvalidate = 0;

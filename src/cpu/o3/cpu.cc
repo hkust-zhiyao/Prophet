@@ -57,6 +57,7 @@
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
 #include "debug/ValueCommit.hh"
+#include "debug/AccessTraceInform.hh"
 #include "enums/MemoryMode.hh"
 #include "sim/async.hh"
 #include "sim/cur_tick.hh"
@@ -1253,6 +1254,7 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
 
         if (this->warmupInstCount && totalInsts() == this->warmupInstCount) {
+            DPRINTFR(AccessTraceInform, "Warmup ended\n");
             fprintf(stderr, "Will trigger stat dump and reset\n");
             Stats::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");

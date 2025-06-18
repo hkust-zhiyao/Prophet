@@ -93,7 +93,30 @@ class Base : public SimObject
         reset(replacement_data);
     }
     virtual void reset(const std::shared_ptr<ReplacementData>&
+        replacement_data, const int degree)
+    {
+        reset(replacement_data);
+    }
+    virtual void reset(const std::shared_ptr<ReplacementData>&
         replacement_data) const = 0;
+
+    virtual void prefetchInsertion(const std::shared_ptr<ReplacementData>&
+        replacement_data, const PacketPtr pkt)
+    {
+        prefetchInsertion(replacement_data);
+    }
+    virtual void prefetchInsertion(const std::shared_ptr<ReplacementData>&
+        replacement_data) const = 0;
+
+    virtual int getPGODegree(const std::shared_ptr<ReplacementData>&
+        replacement_data)
+    {
+        return 0;
+    }
+
+    virtual void setPGODegree(const std::shared_ptr<ReplacementData>&
+        replacement_data, int n)
+    {}
 
     /**
      * Find replacement victim among candidates.

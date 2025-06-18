@@ -161,6 +161,11 @@ class MSHRQueue : public Queue<MSHR>
         // keep regressions unchanged
         return (allocated < numEntries - (numReserve + 1 + demandReserve));
     }
+
+    bool isFree() const
+    {
+      return allocatedList.size() == 0;
+    }
 };
 
 } // namespace gem5

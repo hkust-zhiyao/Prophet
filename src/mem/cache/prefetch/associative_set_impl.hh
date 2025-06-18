@@ -39,7 +39,7 @@ template<class Entry>
 AssociativeSet<Entry>::AssociativeSet(int assoc, int num_entries,
         BaseIndexingPolicy *idx_policy, replacement_policy::Base *rpl_policy,
         Entry const &init_value)
-  : associativity(assoc), numEntries(num_entries), indexingPolicy(idx_policy),
+  : associativity(assoc),allocAssoc(assoc), numEntries(num_entries), indexingPolicy(idx_policy),
     replacementPolicy(rpl_policy), entries(numEntries, init_value)
 {
     fatal_if(!isPowerOf2(num_entries), "The number of entries of an "
@@ -71,11 +71,68 @@ AssociativeSet<Entry>::findEntry(Addr addr, bool is_secure) const
     return nullptr;
 }
 
+// template<class Entry>
+// Entry*
+// AssociativeSet<Entry>::findEntryTriangel(Addr addr, bool is_secure) const
+// {
+//     Addr tag = indexingPolicy->extractTag(addr);
+//     const std::vector<ReplaceableEntry*> selected_entries =
+//         indexingPolicy->getPossibleEntries(addr);
+
+//     for (const auto& location : selected_entries) {
+//         Entry* entry = static_cast<Entry *>(location);
+//         if ((entry->getTag() == tag) && entry->isValid() &&
+//             entry->isSecure() == is_secure) {
+//             return entry;
+//         }
+//     }
+//     return nullptr;
+// }
+
 template<class Entry>
 void
 AssociativeSet<Entry>::accessEntry(Entry *entry)
 {
     replacementPolicy->touch(entry->replacementData);
+}
+
+template<class Entry>
+void
+AssociativeSet<Entry>::weightedAccessEntry(Entry *entry, int weight, bool fill)
+{
+    gem5::replacement_policy::WeightedLRU* wlru = dynamic_cast<gem5::replacement_policy::WeightedLRU*>(replacementPolicy);
+    if(wlru) wlru->touch(entry->replacementData, weight);
+    else if(!fill) accessEntry(entry);  //not fill for RRIPs
+}
+
+// template<class Entry>
+// Entry*
+// AssociativeSet<Entry>::findVictim(Addr addr)
+// {
+//     // Get possible entries to be victimized
+//     const std::vector<ReplaceableEntry*> selected_entries =
+//         indexingPolicy->getPossibleEntries(addr);
+//     Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(
+//                             selected_entries));
+//     // There is only one eviction for this replacement
+//     invalidate(victim);
+//     return victim;
+// }
+
+
+template<class Entry>
+Entry*
+AssociativeSet<Entry>::findVictimHint(Addr addr, bool & hint)
+{
+    // Get possible entries to be victimized
+    const std::vector<ReplaceableEntry*> selected_entries =
+        indexingPolicy->getPossibleEntries(addr);
+    const std::vector<ReplaceableEntry*> slice = std::vector<ReplaceableEntry*>(selected_entries.begin(), selected_entries.begin() + getWayAllocationMax());
+    Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(slice));
+    // There is only one eviction for this replacement
+    hint = victim->isValid();
+    invalidate(victim);
+    return victim;
 }
 
 template<class Entry>
@@ -85,13 +142,12 @@ AssociativeSet<Entry>::findVictim(Addr addr)
     // Get possible entries to be victimized
     const std::vector<ReplaceableEntry*> selected_entries =
         indexingPolicy->getPossibleEntries(addr);
-    Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(
-                            selected_entries));
+    const std::vector<ReplaceableEntry*> slice = std::vector<ReplaceableEntry*>(selected_entries.begin(), selected_entries.begin() + getWayAllocationMax());
+    Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(slice));
     // There is only one eviction for this replacement
     invalidate(victim);
     return victim;
 }
-
 
 template<class Entry>
 std::vector<Entry *>
@@ -99,14 +155,31 @@ AssociativeSet<Entry>::getPossibleEntries(const Addr addr) const
 {
     std::vector<ReplaceableEntry *> selected_entries =
         indexingPolicy->getPossibleEntries(addr);
-    std::vector<Entry *> entries(selected_entries.size(), nullptr);
+         const std::vector<ReplaceableEntry*> slice = std::vector<ReplaceableEntry*>(selected_entries.begin(), selected_entries.begin()+getWayAllocationMax());
+    std::vector<Entry *> entries(slice.size(), nullptr);
 
     unsigned int idx = 0;
-    for (auto &entry : selected_entries) {
+    for (auto &entry : slice) {
         entries[idx++] = static_cast<Entry *>(entry);
     }
     return entries;
 }
+
+
+// template<class Entry>
+// std::vector<Entry *>
+// AssociativeSet<Entry>::getPossibleEntries(const Addr addr) const
+// {
+//     std::vector<ReplaceableEntry *> selected_entries =
+//         indexingPolicy->getPossibleEntries(addr);
+//     std::vector<Entry *> entries(selected_entries.size(), nullptr);
+
+//     unsigned int idx = 0;
+//     for (auto &entry : selected_entries) {
+//         entries[idx++] = static_cast<Entry *>(entry);
+//     }
+//     return entries;
+// }
 
 template<class Entry>
 void
@@ -114,6 +187,21 @@ AssociativeSet<Entry>::insertEntry(Addr addr, bool is_secure, Entry* entry)
 {
    entry->insert(indexingPolicy->extractTag(addr), is_secure);
    replacementPolicy->reset(entry->replacementData);
+}
+
+template<class Entry>
+void
+AssociativeSet<Entry>::insertEntry(Addr addr, bool is_secure, Entry* entry, int degree)
+{
+   entry->insert(indexingPolicy->extractTag(addr), is_secure);
+    replacementPolicy->reset(entry->replacementData, degree);
+}
+
+template<class Entry>
+void
+AssociativeSet<Entry>::setPGODegree(Entry* entry, int degree)
+{
+    replacementPolicy->setPGODegree(entry->replacementData, degree);
 }
 
 template<class Entry>

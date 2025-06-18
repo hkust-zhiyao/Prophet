@@ -44,6 +44,7 @@
 #include "base/trace.hh"
 #include "debug/HWPrefetch.hh"
 #include "debug/HWPrefetchQueue.hh"
+#include "debug/KeyMetricsTrace.hh"
 #include "mem/cache/base.hh"
 #include "mem/request.hh"
 #include "params/QueuedPrefetcher.hh"
@@ -82,6 +83,10 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
         // Tag prefetch packet with  accessing pc
         pkt->req->setPC(pfInfo.getPC());
     }
+    Addr vaddr = pfInfo.getAddr() | pfInfo.getOffset();
+    if (vaddr != 0) {
+        pkt->setPfVaddr(vaddr);
+    }
     tick = t;
 }
 
@@ -117,7 +122,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
           name()),
-      statsQueued(this)
+      statsQueued(this),
+      recv_trains(0),
+      crossPages(p.cross_pages)
 {
 }
 
@@ -207,8 +214,20 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     }
 
     // Calculate prefetches given this access
+    if (cache->getLevel() == 1) {
+        recv_trains++;
+        if (recv_trains > 10000) {
+            recv_trains = 0;
+            double acc = pfIssuedEpo != 0 ?  (double) (pfTimelyEpo + pfUntimelyEpo) / pfIssuedEpo : 0;
+            double cov = (pfTimelyEpo + pfUntimelyEpo + demandMshrMissesEpo) != 0 ?
+                    (double) (pfTimelyEpo + pfUntimelyEpo) / (pfTimelyEpo + pfUntimelyEpo + demandMshrMissesEpo) : 0;
+            double tim = (pfTimelyEpo + pfUntimelyEpo) != 0 ? (double) pfTimelyEpo / (pfTimelyEpo + pfUntimelyEpo) : 0;
+            DPRINTFR(KeyMetricsTrace, "%lf,%lf,%lf\n", acc, cov, tim);
+            pfTimelyEpo = 0; pfUntimelyEpo = 0; pfIssuedEpo = 0; demandMshrMissesEpo = 0;
+        }
+    }
     std::vector<AddrPriority> addresses;
-    calculatePrefetch(pfi, addresses);
+    calculatePrefetch(pkt, pfi, addresses);
 
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
@@ -217,7 +236,71 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     size_t num_pfs = 0;
     for (AddrPriority& addr_prio : addresses) {
 
+        Addr offset = addr_prio.first & Addr((1 << lBlkSize) - 1);
         // Block align prefetch address
+        addr_prio.first = blockAddress(addr_prio.first);
+
+        if (!samePage(addr_prio.first, pfi.getAddr())) {
+            statsQueued.pfSpanPage += 1;
+
+            if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+                statsQueued.pfUsefulSpanPage += 1;
+            }
+        }
+
+        bool can_cross_page = (tlb != nullptr);
+        if ((can_cross_page && useVirtualAddresses) || samePage(addr_prio.first, pfi.getAddr()) || crossPages) {
+            PrefetchInfo new_pfi(pfi,addr_prio.first,offset);
+            statsQueued.pfIdentified++;
+            DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
+                    "inserting into prefetch queue.\n", new_pfi.getAddr());
+            // Create and insert the request
+            insert(pkt, new_pfi, addr_prio.second);
+            num_pfs += 1;
+            if (num_pfs == max_pfs) {
+                break;
+            }
+        } else {
+            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+        }
+    }
+}
+
+void
+Queued::notifyCross(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses)
+{
+    statsQueued.crossLevelPrefetch++;
+    Addr blk_addr = blockAddress(pfi.getAddr());
+    bool is_secure = pfi.isSecure();
+
+    // Squash queued prefetches if demand miss to same line
+    if (queueSquash) {
+        auto itr = pfq.begin();
+        while (itr != pfq.end()) {
+            if (itr->pfInfo.getAddr() == blk_addr &&
+                itr->pfInfo.isSecure() == is_secure) {
+                DPRINTF(HWPrefetch, "Removing pf candidate addr: %#x "
+                        "(cl: %#x), demand request going to the same addr\n",
+                        itr->pfInfo.getAddr(),
+                        blockAddress(itr->pfInfo.getAddr()));
+                delete itr->pkt;
+                itr = pfq.erase(itr);
+                statsQueued.pfRemovedDemand++;
+            } else {
+                ++itr;
+            }
+        }
+    }
+
+    // Get the maximu number of prefetches that we are allowed to generate
+    size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+
+    // Queue up generated prefetches
+    size_t num_pfs = 0;
+    for (AddrPriority& addr_prio : addresses) {
+
+       // Block align prefetch address
         addr_prio.first = blockAddress(addr_prio.first);
 
         if (!samePage(addr_prio.first, pfi.getAddr())) {
@@ -244,6 +327,42 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
         }
     }
+    Tick next_pf_time = nextPrefetchReadyTime();
+    if (next_pf_time != MaxTick) {
+        cache->schedMemSideSendEvent(next_pf_time);
+    }
+}
+
+void
+Queued::notifyPrecomputation(const PacketPtr &pkt, const PrefetchInfo &pfi,
+        std::vector<AddrPriority> addresses)
+{
+    // Get the maximu number of prefetches that we are allowed to generate
+    size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+
+    // Queue up generated prefetches
+    size_t num_pfs = 0;
+    for (AddrPriority& addr_prio : addresses) {
+        Addr offset = addr_prio.first & Addr((1 << lBlkSize) - 1);
+       // Block align prefetch address
+        addr_prio.first = blockAddress(addr_prio.first);
+
+        bool can_cross_page = (tlb != nullptr);
+        if (can_cross_page) {
+            PrefetchInfo new_pfi(pfi,addr_prio.first,offset);
+            statsQueued.pfIdentified++;
+            // Create and insert the request
+            insert(pkt, new_pfi, addr_prio.second);
+            num_pfs += 1;
+            if (num_pfs == max_pfs) {
+                break;
+            }
+        }
+    }
+    Tick next_pf_time = nextPrefetchReadyTime();
+    if (next_pf_time != MaxTick) {
+        cache->schedMemSideSendEvent(next_pf_time);
+    }
 }
 
 PacketPtr
@@ -260,7 +379,6 @@ Queued::getPacket()
     PacketPtr pkt = pfq.front().pkt;
     pfq.pop_front();
 
-    prefetchStats.pfIssued++;
     issuedPrefetches += 1;
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
@@ -284,7 +402,9 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfSpanPage, statistics::units::Count::get(),
              "number of prefetches that crossed the page"),
     ADD_STAT(pfUsefulSpanPage, statistics::units::Count::get(),
-             "number of prefetches that is useful and crossed the page")
+             "number of prefetches that is useful and crossed the page"),
+    ADD_STAT(crossLevelPrefetch, statistics::units::Count::get(),
+             "number of prefetches that crosses the page")
 {
 }
 
@@ -546,6 +666,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
              * translationComplete to erase it */
             assert(&queue == &pfqMissingTranslation);
             DeferredPacket * old_ptr = &(*it);
+            DPRINTF(HWPrefetch, "old_ptr: %p\n",old_ptr);
             pfqSquashed.splice(pfqSquashed.end(),queue,it);
             it = pfqSquashed.end();
             it--;

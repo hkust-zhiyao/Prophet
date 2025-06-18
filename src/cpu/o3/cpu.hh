@@ -169,6 +169,7 @@ class CPU : public BaseCPU
     bool isCpuDrained() const;
 
   public:
+
     /** Constructs a CPU with the given parameters. */
     CPU(const BaseO3CPUParams &params);
 

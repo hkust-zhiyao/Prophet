@@ -76,6 +76,9 @@ class BaseCache(ClockedObject):
     cxx_header = "mem/cache/base.hh"
     cxx_class = 'gem5::BaseCache'
 
+    level = Param.Int(-1,
+        "Cache Level: 0 for icache; 1 for dcache; 2 for l2cache; 3 for"\
+        " l3cache. -1 for all other")
     size = Param.MemorySize("Capacity")
     assoc = Param.Unsigned("Associativity")
 
@@ -97,10 +100,13 @@ class BaseCache(ClockedObject):
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
+    
     prefetch_on_access = Param.Bool(False,
          "Notify the hardware prefetcher on every access (not just misses)")
     prefetch_on_pf_hit = Param.Bool(False,
         "Notify the hardware prefetcher on hit on prefetched lines")
+
+    tracer = Param.AccessTrace(NULL,"Tracer attached to cache")
 
     tags = Param.BaseTags(BaseSetAssoc(), "Tag store")
     replacement_policy = Param.BaseReplacementPolicy(LRURP(),
@@ -134,6 +140,8 @@ class BaseCache(ClockedObject):
     # cache.
     writeback_clean = Param.Bool(False, "Writeback clean lines")
 
+    enable_bypass = Param.Bool(False, "Enable bypass writeback evictions")
+
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a
     # fill is determined accordingly. For a mostly inclusive cache,
@@ -151,8 +159,10 @@ class BaseCache(ClockedObject):
     # in the current cache. Typically, this would be enabled in the
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
-
+    cal_dead = Param.Bool(False, "calculate the dead blocks")
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
+    enable_pgo_rp = Param.Bool(False, "enable PGO for cache replacement policy")
+    pgo_benchmark = Param.String("", "The selected benchmark")
 
 class Cache(BaseCache):
     type = 'Cache'

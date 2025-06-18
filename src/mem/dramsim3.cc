@@ -196,7 +196,8 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
 
     // if we cannot accept we need to send a retry once progress can
     // be made
-    bool can_accept = nbrOutstanding() < wrapper.queueSize();
+    bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
+                      wrapper.canAccept(pkt->getAddr(), pkt->isWrite());;
 
     // keep track of the transaction
     if (pkt->isRead()) {
@@ -226,7 +227,6 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
     if (can_accept) {
         // we should never have a situation when we think there is space,
         // and there isn't
-        assert(wrapper.canAccept(pkt->getAddr(), pkt->isWrite()));
 
         DPRINTF(DRAMsim3, "Enqueueing address %lld\n", pkt->getAddr());
 

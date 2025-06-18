@@ -17,7 +17,6 @@ NemuMMC::NemuMMC(const NemuMMCParams *p)
     , write_cmd(false)
     , read_ext_csd(false)
 {
-    printf("111\n");
     assert(C_SIZE < (1 << 12));
     sd_reg_base = (uint32_t *)malloc(0x80);
     img_fp = fopen(p->img_path.c_str(), "rb");

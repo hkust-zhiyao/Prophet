@@ -60,6 +60,7 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue_entry.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "mem/request.hh"
 #include "params/Cache.hh"
 
@@ -175,6 +176,13 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         CacheBlk *old_blk(tags->findBlock(pkt->getAddr(), pkt->isSecure()));
         if (old_blk && old_blk->isValid()) {
             BaseCache::evictBlock(old_blk, writebacks);
+        }
+
+        for(int x=0;x<4;x++) {
+		CacheBlk * bad_blk = tags->getBadBlock();
+		if(bad_blk && bad_blk->isValid()) {
+		   BaseCache::evictBlock(bad_blk, writebacks);
+		}
         }
 
         blk = nullptr;
@@ -552,12 +560,20 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
                 __func__, cpu_pkt->print(), pkt->print());
     }
 
+    if (cpu_pkt->isFromPrefetcher()) {
+        pkt->setFromPrefetcher();
+    }
+    if (!cpu_pkt->isUsedForPfTrain()) {
+        pkt->clearUsedForPfTrain();
+    }
+
     // the packet should be block aligned
     assert(pkt->getAddr() == pkt->getBlockAddr(blkSize));
 
     pkt->allocate();
     DPRINTF(Cache, "%s: created %s from %s\n", __func__, pkt->print(),
             cpu_pkt->print());
+    
     return pkt;
 }
 
@@ -720,6 +736,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            if(tgt_pkt->cmd.isRead())
+            {
+                ppFill4Miss->notify(tgt_pkt);
+            }
 
             Tick completion_time;
             // Here we charge on completion_time the delay of the xbar if the
@@ -896,6 +916,11 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
           case MSHR::Target::FromPrefetcher:
             assert(tgt_pkt->cmd == MemCmd::HardPFReq);
             from_pref = true;
+	        ppFill->notify(tgt_pkt);
+
+            assert(blk && blk->isValid());
+            tgt_pkt->setDataFromBlock(blk->data, blkSize);
+            ppFillPrefetchData->notify(tgt_pkt);
 
             delete tgt_pkt;
             break;
@@ -927,6 +952,13 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
 
     if (blk && !from_core && from_pref) {
         blk->setPrefetched();
+    }
+
+    if (blk && from_core && from_pref && prefetcher) {
+        BaseCache::prefetcher->pfUntimely(pkt);
+        if (!pkt->isFromPrefetcher()) {
+            prefetcher->pfUntimelyNoPF();
+        }
     }
 
     if (!mshr->hasLockedRMWReadTarget()) {

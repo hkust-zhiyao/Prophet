@@ -68,6 +68,7 @@
 #include "mem/packet_queue.hh"
 #include "mem/qport.hh"
 #include "mem/request.hh"
+#include "mem/probes/access_trace.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/arch_db.hh"
 #include "sim/clocked_object.hh"
@@ -76,6 +77,7 @@
 #include "sim/serialize.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
+#include "cpu/base.hh"
 
 namespace gem5
 {
@@ -85,10 +87,12 @@ namespace prefetch
 {
     class Base;
 }
+class AccessTrace;
 class MSHR;
 class RequestPort;
 class QueueEntry;
 struct BaseCacheParams;
+extern std::vector<prefetch::Base *> prefetcher_array;
 
 /**
  * A basic cache interface. Implements some common functions for speed.
@@ -96,6 +100,7 @@ struct BaseCacheParams;
 class BaseCache : public ClockedObject
 {
   protected:
+    const unsigned level;
     /**
      * Indexes to enumerate the MSHR queues.
      */
@@ -339,6 +344,7 @@ class BaseCache : public ClockedObject
     CpuSidePort cpuSidePort;
     MemSidePort memSidePort;
 
+
   protected:
 
     /** Miss status registers */
@@ -353,8 +359,11 @@ class BaseCache : public ClockedObject
     /** Compression method being used. */
     compression::Base* compressor;
 
+  public:
     /** Prefetcher */
     prefetch::Base *prefetcher;
+
+    AccessTrace *tracer; 
 
     /** To probe when a cache hit occurs */
     ProbePointArg<PacketPtr> *ppHit;
@@ -364,6 +373,13 @@ class BaseCache : public ClockedObject
 
     /** To probe when a cache fill occurs */
     ProbePointArg<PacketPtr> *ppFill;
+
+    ProbePointArg<PacketPtr> *ppFill4Miss;
+
+    ProbePointArg<PacketPtr> *ppFillPrefetchData;
+
+    /** To probe when a cache hit occurs */
+    ProbePointArg<PacketPtr> *ppPfIssue;
 
     /**
      * To probe when the contents of a block are updated. Content updates
@@ -401,6 +417,8 @@ class BaseCache : public ClockedObject
      * hold it for deletion until a subsequent call
      */
     std::unique_ptr<Packet> pendingDelete;
+
+    void outPrefetcherPGOInfo();
 
     /**
      * Mark a request as in service (sent downstream in the memory
@@ -675,6 +693,8 @@ class BaseCache : public ClockedObject
      */
     const bool writebackClean;
 
+    const bool enableBypass;
+
     /**
      * Writebacks from the tempBlock, resulting on the response path
      * in atomic mode, must happen after the call to recvAtomic has
@@ -803,7 +823,7 @@ class BaseCache : public ClockedObject
      * @param writebacks A list of writeback packets for the evicted blocks
      * @return the allocated block
      */
-    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks);
+    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks, bool is_fill = false);
     /**
      * Evict a cache block.
      *
@@ -988,6 +1008,14 @@ class BaseCache : public ClockedObject
     /** ArchDB */
     ArchDBer *archDBer;
 
+    bool calDead;
+
+    std::map<Addr, int> profileReplTable;
+
+    bool enablePGOForRepl;
+
+    const std::string benchmark;
+
   public:
     /** System we are currently operating in. */
     System *system;
@@ -1137,6 +1165,23 @@ class BaseCache : public ClockedObject
         /** The average overall latency of an MSHR miss. */
         statistics::Formula overallAvgMshrUncacheableLatency;
 
+        /** Number of blocks written back with prefetched bit set. */
+        statistics::Scalar writebackPrefetchs;
+
+        /** Number of blocks written back with triped bit set. */
+        statistics::Scalar writebackTriped;
+
+        /** Number of blocks allocated in this cache. */
+        statistics::Scalar allocates;
+
+        statistics::Scalar allocatedPrefetchs;
+
+        /** Number of blocks written back with triped bit set. */
+        statistics::Scalar demandDeads;
+
+        /** Number of blocks written back with triped bit set. */
+        statistics::Scalar prefetchDeads;
+
         /** Number of replacements of valid blocks. */
         statistics::Scalar replacements;
 
@@ -1148,6 +1193,12 @@ class BaseCache : public ClockedObject
          * factor improved).
          */
         statistics::Scalar dataContractions;
+        
+        statistics::Distribution refCounts;
+
+        statistics::Distribution deadRefCounts;
+
+        statistics::Distribution liveRefCounts;
 
         /** Per-command statistics */
         std::vector<std::unique_ptr<CacheCmdStats>> cmd;
@@ -1173,6 +1224,10 @@ class BaseCache : public ClockedObject
     getBlockSize() const
     {
         return blkSize;
+    }
+
+    unsigned getLevel() {
+        return level;
     }
 
     const AddrRangeList &getAddrRanges() const { return addrRanges; }
@@ -1268,6 +1323,11 @@ class BaseCache : public ClockedObject
             stats.blockedCycles[cause] += curCycle() - blockedCycle;
             cpuSidePort.clearBlocked();
         }
+    }
+
+    bool isMshrQueueFree()
+    {
+        return mshrQueue.isFree();
     }
 
     /**

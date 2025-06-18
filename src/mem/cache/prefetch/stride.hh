@@ -97,6 +97,10 @@ class StridePrefetcherHashedSetAssociative : public SetAssociative
 class Stride : public Queued
 {
   protected:
+    const std::string benchmark;
+    bool enableRPG;
+    std::set<Addr> profiledAddrs;
+    int distance;
     /** Initial confidence counter value for the pc tables. */
     const SatCounter8 initConfidence;
 
@@ -157,6 +161,33 @@ class Stride : public Queued
      * @return The new PC table
      */
     PCTable* allocateNewContext(int context);
+
+    void interpretHintFile(const std::string &hintContent);
+
+    void notifyFillPrefetchData(const PacketPtr& pkt) override;
+
+    struct DepSucEntry
+    {
+        DepSucEntry() {
+            this->suc_inst = "";
+            this->suc_pc = 0;
+        }
+        DepSucEntry(const std::string suc_inst, Addr suc_pc) {
+            this->suc_inst = suc_inst;
+            this->suc_pc = suc_pc;
+        }
+        std::string suc_inst;
+        Addr suc_pc;
+    };
+
+    void processInstructionChain(const PacketPtr& pkt,
+        const DepSucEntry& depPair,
+        uint64_t baseAddr,
+        Addr currentPC);
+    
+    void issuePrefetch(PacketPtr pkt, const std::vector<AddrPriority>& addresses, Addr nextPC);
+    
+    std::map<Addr, DepSucEntry> dependenceGraph;
 
   public:
     Stride(const StridePrefetcherParams &p);

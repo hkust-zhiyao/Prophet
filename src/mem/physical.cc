@@ -526,6 +526,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
                    filepath, (uint64_t)backingStore[store_id].pmem);
             lseek(fd, 0, SEEK_SET);
             auto bytes = read(fd, backingStore[store_id].pmem, file_len);
+            inform("bytes: %d", bytes);
             assert(bytes == file_len);
         } else {
             // large file -> file map
@@ -608,6 +609,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         }
 
         uint32_t restorer_size = 0x400;
+        inform("restorer_size: %d", restorer_size);
         fseek(fp, 0, SEEK_SET);
         assert(restorer_size == fread(pmem, 1, restorer_size, fp));
         fclose(fp);

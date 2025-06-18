@@ -59,6 +59,7 @@ ElasticTrace::ElasticTrace(const ElasticTraceParams &params)
        depWindowSize(params.depWindowSize),
        dataTraceStream(nullptr),
        instTraceStream(nullptr),
+       memoryTraceStream(nullptr),
        startTraceInst(params.startTraceInst),
        allProbesReg(false),
        traceVirtAddr(params.traceVirtAddr),
@@ -84,11 +85,17 @@ ElasticTrace::ElasticTrace(const ElasticTraceParams &params)
     instTraceStream = new ProtoOutputStream(filename);
     filename = simout.resolve(name() + "." + params.dataDepTraceFile);
     dataTraceStream = new ProtoOutputStream(filename);
+    memoryTraceStream = new ProtoOutputStream(params.memoryAccessTraceFile);
     // Create a protobuf message for the header and write it to the stream
     ProtoMessage::PacketHeader inst_pkt_header;
     inst_pkt_header.set_obj_id(name());
     inst_pkt_header.set_tick_freq(sim_clock::Frequency);
     instTraceStream->write(inst_pkt_header);
+    // Create a protobuf message for the header and write it to the stream
+    ProtoMessage::PacketHeader memory_pkt_header;
+    memory_pkt_header.set_obj_id(name());
+    memory_pkt_header.set_tick_freq(sim_clock::Frequency);
+    memoryTraceStream->write(memory_pkt_header);
     // Create a protobuf message for the header and write it to
     // the stream
     ProtoMessage::InstDepRecordHeader data_rec_header;
@@ -144,6 +151,9 @@ ElasticTrace::regEtraceListeners()
     listeners.push_back(new ProbeListenerArg<ElasticTrace,
             DynInstConstPtr>(this, "Commit",
                 &ElasticTrace::addCommittedInst));
+    listeners.push_back(new ProbeListenerArg<ElasticTrace,
+            std::pair<DynInstConstPtr, PacketPtr>>(this, "DataAccessComplete",
+                &ElasticTrace::addMemoryAccess));
     allProbesReg = true;
 }
 
@@ -389,6 +399,12 @@ ElasticTrace::addCommittedInst(const DynInstConstPtr& head_inst)
     // As the information contained is no longer needed, remove the execution
     // info object from the temporary store.
     clearTempStoreUntil(head_inst);
+}
+
+void
+ElasticTrace::addMemoryAccess(const std::pair<DynInstConstPtr, PacketPtr>& p)
+{
+
 }
 
 void
@@ -923,6 +939,7 @@ ElasticTrace::flushTraces()
     // Delete the stream objects
     delete dataTraceStream;
     delete instTraceStream;
+    delete memoryTraceStream;
 }
 
 } // namespace o3

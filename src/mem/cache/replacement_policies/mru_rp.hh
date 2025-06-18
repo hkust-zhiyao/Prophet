@@ -95,6 +95,8 @@ class MRU : public Base
     void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
                                                                      override;
 
+    void prefetchInsertion(const std::shared_ptr<ReplacementData>&
+        replacement_data) const {}
     /**
      * Find replacement victim using access timestamps.
      *

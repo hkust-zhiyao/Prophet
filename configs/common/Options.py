@@ -190,8 +190,7 @@ def addNoISAOptions(parser):
 
     parser.add_argument("--difftest-ref-so",
                         action="store",
-                        default="{}/build/riscv64-nemu-interpreter-so".format(
-                            os.environ['NEMU_HOME']),
+                        default="./build/riscv64-nemu-interpreter-so",
                         help="The shared lib file used to do difftest")
     # ArchDB option
     parser.add_argument("--enable-arch-db",
@@ -204,6 +203,9 @@ def addNoISAOptions(parser):
                         default=True,
                         help="start arch database from "
                         "the beginning of the simulation")
+    
+    parser.add_argument("--tp-meta-size", type=str, default="262144",
+                        help="temporal prefetching metaTable size")
 
 
 # Add common options that assume a non-NULL ISA.
@@ -263,6 +265,12 @@ def addCommonOptions(parser):
                         type of hardware prefetcher to use with the L2 cache.
                         (if not set, use the default prefetcher of
                         the selected cache)""")
+    parser.add_argument("--l3-hwp-type", default=None,
+                        choices=ObjectList.hwp_list.get_names(),
+                        help="""
+                        type of hardware prefetcher to use with the L3 cache.
+                        (if not set, use the default prefetcher of
+                        the selected cache)""")
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='2GHz',
@@ -286,6 +294,15 @@ def addCommonOptions(parser):
                         help="""Data dependency trace file input to
                       Elastic Trace probe in a capture simulation and
                       Trace CPU in a replay simulation""", default="")
+    parser.add_argument("--memory-trace-file", action="store", type=str,
+                        help="""Memory access trace file""", default="")
+    # Trace Monitor option
+    parser.add_argument("--trace-monitor",
+                        action="store_true",
+                        help="enable trace monitor")
+    parser.add_argument("--access-trace",
+                        action="store_true",
+                        help="enable trace monitor")
 
     # dist-gem5 options
     parser.add_argument("--dist", action="store_true",

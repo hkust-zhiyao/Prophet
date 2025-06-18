@@ -55,50 +55,61 @@ class L1Cache(Cache):
     tgts_per_mshr = 20
 
 class L1_ICache(L1Cache):
+    level = 1
     is_read_only = True
     # Writeback clean lines as well
     writeback_clean = True
-    tag_latency = 1
-    data_latency = 1
-    response_latency = 1
-    mshrs = 2
+    tag_latency = 2
+    data_latency = 2
+    response_latency = 2
+    assoc = 4
+    mshrs = 16
 
 class L1_DCache(L1Cache):
+    level = 1
     mshrs = 16
     # always writeback clean when lower level is exclusive
-    writeback_clean = True
+    #writeback_clean = True
 
     # aligned latency:
-    tag_latency = 1
-    data_latency = 1
+    tag_latency = 4
+    data_latency = 4
     # This is L1 miss & L2 hit latency
-    response_latency = 12
+    response_latency = 4
+    assoc = 4
+    replacement_policy = TreePLRURP()
 
 class L2Cache(Cache):
+    level = 2
     mshrs = 32
     tgts_per_mshr = 20
-    clusivity='mostly_excl'
-    prefetch_on_access = True
+    clusivity='mostly_incl'
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 
     # aligned latency:
-    tag_latency = 2
-    data_latency = 6
+    tag_latency = 9
+    data_latency = 9
     # This is L2 miss & L3 hit latency
-    response_latency = 20
+    response_latency = 9
+    tracer = AccessTrace()
+    # enable_pgo_rp = True
+    replacement_policy = TreePLRURP()
 
 class L3Cache(Cache):
-    mshrs = 64
-    tgts_per_mshr = 20
+    level = 3
+    mshrs = 36
+    tgts_per_mshr = 12
     clusivity='mostly_excl'
     writeback_clean = False
 
     # aligned latency:
-    tag_latency = 2
-    data_latency = 5
+    tag_latency = 20
+    data_latency = 20
     # This is L3 miss latency, which should be modeled with memory controller
-    response_latency = 0
+    response_latency = 20
+    # enable_pgo_rp = True
+    replacement_policy = NRFRP()
 
 class IOCache(Cache):
     assoc = 8

@@ -75,20 +75,30 @@ class BertiPrefetcher : public Queued
             }
         }
 
+        // void updateStatus()
+        // {
+        //     uint8_t min_cov = 0;
+        //     for (auto &info : deltas) {
+        //         info.status = info.coverageCounter >=
+        //                               counter * 0.35 ? L2_PREF : NO_PREF;
+        //         if (info.status == L2_PREF && info.coverageCounter > min_cov) {
+        //             min_cov = info.coverageCounter;
+        //             best_delta = info.delta;
+        //         }
+        //     }
+        //     if (min_cov == 0) {
+        //         best_delta = 0;
+        //     }
+        // }
+
         void updateStatus()
         {
-            uint8_t min_cov = 0;
             for (auto &info : deltas) {
                 info.status = info.coverageCounter >=
                                       counter * 0.35 ? L2_PREF : NO_PREF;
-                if (info.status == L2_PREF && info.coverageCounter > min_cov) {
-                    min_cov = info.coverageCounter;
-                    best_delta = info.delta;
-                }
+                info.coverageCounter = 0;
             }
-            if (min_cov == 0) {
-                best_delta = 0;
-            }
+            counter = 0;
         }
 
         TableOfDeltasEntry()
@@ -103,6 +113,14 @@ class BertiPrefetcher : public Queued
 
     Cycles lastFillLatency;
     bool aggressive_pf;
+
+    struct prefetch_fill_latency
+    {
+        Addr addr;
+        bool is_secure;
+        Cycles latency;
+    };
+    std::list<prefetch_fill_latency> prefetch_latency_container;
 
 
     struct BertiStats : public statistics::Group
@@ -138,6 +156,7 @@ class BertiPrefetcher : public Queued
 
     void notifyFill(const PacketPtr &pkt) override;
 
+    void notifyFill4Miss(const PacketPtr &pkt) override;
 
     void printDeltaTableEntry(const TableOfDeltasEntry &entry) {
         DPRINTF(BertiPrefetcher, "Entry Counter: %d\n", entry.counter);
@@ -145,6 +164,22 @@ class BertiPrefetcher : public Queued
             DPRINTF(BertiPrefetcher,
                     "=>[delta: %d coverage: %d status: %d]\n",
                     info.delta, info.coverageCounter, info.status);
+        }
+    }
+
+    void cleanPrefetchLatency()
+    {
+        std::list<prefetch_fill_latency>::iterator it;
+        for (it = prefetch_latency_container.begin(); it != prefetch_latency_container.end();) 
+        {
+            if(!inCache(it->addr,it->is_secure))
+            {
+                it = prefetch_latency_container.erase(it);
+            }
+            else
+            {
+                it++;
+            }
         }
     }
 

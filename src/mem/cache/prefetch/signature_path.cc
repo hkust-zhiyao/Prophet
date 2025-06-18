@@ -306,8 +306,6 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
             current_confidence = 0.0;
         }
     }
-
-    auxiliaryPrefetcher(ppn, current_block, is_secure, addresses);
 }
 
 void
