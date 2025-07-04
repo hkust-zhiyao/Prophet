@@ -35,5 +35,4 @@ test_new
 script
 *.patch
 *.patch2
-pgo
 pgoout
