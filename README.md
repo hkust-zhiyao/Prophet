@@ -1,6 +1,16 @@
 # Profile-Guided Temporal Prefetching
 Mengming Li, Qijun Zhang, Yichuan Gao, Wenji Fang, Yao Lu, Yongqing Ren, Zhiyao Xie
 
+```
+@inproceedings{li2025profile,
+  title={Profile-Guided Temporal Prefetching},
+  author={Li, Mengming and Zhang, Qijun and Gao, Yichuan and Fang, Wenji and Lu, Yao and Ren, Yongqing and Xie, Zhiyao},
+  booktitle={Proceedings of the 52nd Annual International Symposium on Computer Architecture},
+  pages={572--585},
+  year={2025}
+}
+```
+
 # Compilation
 ```
 scons build/RISCV/gem5.opt
