@@ -22,9 +22,9 @@ This repository is built on [Xiangshan's gem5](https://github.com/OpenXiangShan/
 
 ## Checkpoint Generation
 
-Generation flow: https://docs.xiangshan.cc/zh-cn/latest/tools/simpoint/
-
 Primary tool: [NEMU](https://github.com/OpenXiangShan/NEMU)
+
+Generation flow: https://docs.xiangshan.cc/zh-cn/latest/tools/simpoint/
 
 ## Experiment Flow
 
